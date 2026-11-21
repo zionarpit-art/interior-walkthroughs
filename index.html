@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cut">
+<title>Interior Walkthroughs</title>
+<meta name="description" content="Walk through the kitchen and bathroom in 3D and tap to switch between two finishes.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23e9dcc6' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23e9dcc6' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23e9dcc6'/%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0d0c0b;--card:#171513;--ink:#f3ede4;--dim:rgba(243,237,228,.62);--line:rgba(243,237,228,.14);--accent:#e9dcc6}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink)}
+  body{font:400 15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;
+    padding:max(28px,env(safe-area-inset-top)) 16px calc(max(28px,env(safe-area-inset-bottom)) + 56px)}
+  main{max-width:1080px;margin:0 auto}
+  header{margin:8px 0 28px}
+  h1{font-weight:600;font-size:clamp(26px,4vw,38px);letter-spacing:-.01em;margin:0 0 6px}
+  header p{color:var(--dim);margin:0;max-width:60ch}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px}
+  a.room{display:block;color:inherit;text-decoration:none;background:var(--card);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;transition:transform .25s,border-color .25s}
+  a.room:hover{transform:translateY(-3px);border-color:rgba(233,220,198,.45)}
+  a.room:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .pic{position:relative;aspect-ratio:16/9;background:#000}
+  .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .pic img.b{animation:swap 7s ease-in-out infinite}
+  a.room:nth-child(2) .pic img.b{animation-delay:-3.5s}
+  @keyframes swap{0%,35%{opacity:0}50%,85%{opacity:1}100%{opacity:0}}
+  .tag{position:absolute;left:12px;bottom:12px;font-size:12.5px;padding:5px 10px;border-radius:999px;
+    background:rgba(20,18,16,.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line)}
+  .tag .t2{display:none}
+  .body{padding:16px 18px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+  h2{font-size:20px;font-weight:600;margin:0 0 4px}
+  .body p{margin:0;color:var(--dim);font-size:14px}
+  .go{flex:none;font-size:14px;padding:8px 14px;border-radius:999px;background:var(--accent);color:#1a1612;font-weight:600}
+  .how{margin-top:28px;color:var(--dim);font-size:13.5px;border-top:1px solid var(--line);padding-top:16px}
+  .how b{color:var(--ink);font-weight:600}
+  @media (prefers-reduced-motion:reduce){.pic img.b{animation:none;opacity:0}a.room{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Interior walkthroughs</h1>
+    <p>Pick a room. Walk around it in 3D, then tap any surface to ripple the second finish across the room.</p>
+  </header>
+  <div class="grid">
+    <a class="room" href="kitchen/index.html">
+      <div class="pic">
+        <img src="thumbs/kitchen_v1.jpg" alt="Kitchen, Style 1: navy cabinets and white marble" width="960" height="540">
+        <img class="b" src="thumbs/kitchen_v2.jpg" alt="" width="960" height="540">
+      </div>
+      <div class="body">
+        <div><h2>Kitchen</h2><p>Navy &amp; white marble · Walnut &amp; herringbone</p></div>
+        <span class="go">Open</span>
+      </div>
+    </a>
+    <a class="room" href="bathroom/index.html">
+      <div class="pic">
+        <img src="thumbs/bathroom_v1.jpg" alt="Bathroom, Style 1: travertine walls and bronze fittings" width="960" height="540">
+        <img class="b" src="thumbs/bathroom_v2.jpg" alt="" width="960" height="540">
+      </div>
+      <div class="body">
+        <div><h2>Bathroom</h2><p>Travertine &amp; bronze · Stone &amp; gold</p></div>
+        <span class="go">Open</span>
+      </div>
+    </a>
+  </div>
+  <p class="how"><b>How to use:</b> drag to look around · scroll or pinch to zoom · tap a surface to switch the finish from that spot · the view buttons jump to close-ups (real renders) · Tour plays the walkthrough on its own. Best on a laptop or desktop; phones get a lighter version.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cut, user-scalable=no">
+<title>Kitchen Style Viewer</title>
+<meta name="description" content="Walk around the kitchen and tap anywhere to ripple in the next finish.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23e9dcc6' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23e9dcc6' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23e9dcc6'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0d0c0b; --ink:#f3ede4; --ink-dim:rgba(243,237,228,.62); --glass:rgba(20,18,16,.52);
+    --line:rgba(243,237,228,.16); --accent:#e9dcc6;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+    font:500 14px/1.35 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
+  canvas{display:block;width:100vw;height:100vh;height:100dvh;outline:none;cursor:grab}
+  canvas:active{cursor:grabbing}
+  .hud{position:fixed;left:0;right:0;pointer-events:none;display:flex;justify-content:center;padding:0 16px}
+  .top{top:max(14px,env(safe-area-inset-top));justify-content:space-between;align-items:flex-start}
+  .bottom{bottom:max(16px,env(safe-area-inset-bottom));flex-direction:column;align-items:center;gap:10px}
+  .brand{pointer-events:auto;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:999px;padding:8px 14px;letter-spacing:.02em}
+  .brand b{font-weight:600}
+  .brand span{color:var(--ink-dim);margin-left:8px}
+  .chip{pointer-events:auto;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer;font:inherit}
+  .styles{pointer-events:auto;display:flex;gap:6px;padding:5px;border-radius:999px;background:var(--glass);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);max-width:100%;overflow-x:auto}
+  .styles button{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--ink-dim);
+    font:inherit;padding:7px 12px 7px 8px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:background .2s,color .2s}
+  .styles button .sw{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+  .styles button[aria-pressed="true"]{background:rgba(243,237,228,.14);color:var(--ink)}
+  .styles button:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .views{pointer-events:auto;display:flex;gap:4px;max-width:100%;overflow-x:auto;scrollbar-width:none}
+  .views[hidden]{display:none}
+  .views button{border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    color:var(--ink-dim);font:inherit;font-size:12.5px;padding:6px 11px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:color .2s,background .2s}
+  .views button:hover{color:var(--ink);background:rgba(243,237,228,.12)}
+  .views button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .hint{color:var(--ink-dim);font-size:12.5px;text-shadow:0 1px 8px rgba(0,0,0,.6);transition:opacity .6s}
+  #loader{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg) center/cover no-repeat;z-index:5;transition:opacity .8s}
+  #loader.poster{background-image:linear-gradient(rgba(13,12,11,.25),rgba(13,12,11,.45)),url(poster.jpg)}
+  #loader .box{text-align:center;width:min(320px,80vw);padding:14px 18px;border-radius:14px}
+  #loader.poster .box{background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line)}
+  #loader .bar{height:2px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:14px}
+  #loader .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+  #err{position:fixed;inset:auto 16px 90px;display:none;background:#3b1717;border:1px solid #7a2c2c;padding:10px 12px;border-radius:10px;z-index:6}
+  @media (max-width:560px){ .bottom{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 50px)} .brand span{display:none} .styles button{padding:7px 10px 7px 7px} .styles button .lbl-long{display:none} }
+  @media (prefers-reduced-motion:reduce){ .hint{transition:none} }
+</style>
+</head>
+<body>
+<div id="loader" class="poster"><div class="box"><div>Preparing the kitchen…</div><div class="bar"><i id="bar"></i></div></div></div>
+<canvas id="c" tabindex="0" aria-label="3D kitchen. Drag to look around, tap a spot to change the finish from there."></canvas>
+<div class="hud top">
+  <div class="brand"><b>Kitchen</b><span>Two finishes, one room</span></div>
+  <div style="display:flex;gap:6px">
+    <span class="chip" id="hd" hidden role="status" aria-live="polite" title="Loading full-detail splats in the background">HD 0%</span>
+    <button class="chip" id="tour" type="button" aria-pressed="true">Tour</button>
+  </div>
+</div>
+<div class="hud bottom">
+  <div class="hint" id="hint">Drag to look around · tap any surface to change the finish from that spot</div>
+  <div class="views" id="views" hidden role="group" aria-label="Close-up views"></div>
+  <div class="styles" id="styles" role="group" aria-label="Finish"></div>
+</div>
+<div id="err"></div>
+
+<script>window.KV_CONFIG={"clearColor": "#0d0c0b", "stops": [{"name": "WEB_Cam_01_Hero", "label": null, "position": [-2.5834867656230927, 1.4002561569213867, -2.8895856142044067], "rotation": [[-0.39394229650497437, 0.12845297157764435, -0.9101149439811707], [2.063813781205681e-06, 0.990186333656311, 0.13975326716899872], [0.9191351532936096, 0.055052854120731354, -0.39007651805877686]], "target": [-1.4913488328456879, 1.2325522363185883, -2.4214937925338744], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_01_Hero.js"}, {"name": "WEB_Cam_02", "label": null, "position": [2.3999998569488525, 1.600000023841858, 1.6000001430511475], "rotation": [[0.7808687686920166, -0.0646909773349762, 0.6213364601135254], [-3.834870199170837e-09, 0.994623601436615, 0.10355609655380249], [-0.6246950626373291, -0.08086372166872025, 0.776670515537262]], "target": [1.6543961048126221, 1.4757327079772948, 0.6679955244064332], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_02.js"}, {"name": "WEB_Cam_03", "label": null, "position": [-0.6000000238418579, 1.600000023841858, 1.3999998569488525], "rotation": [[0.9820064306259155, -0.01775265671312809, 0.18801113963127136], [5.5593574188606e-10, 0.9955716729164124, 0.0940052941441536], [-0.18884742259979248, -0.09231380373239517, 0.9776577949523926]], "target": [-0.8256133913993835, 1.4871936708688736, 0.2268105030059815], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_03.js"}, {"name": "WEB_Cam_04", "label": null, "position": [1.3999998569488525, 1.600000023841858, -1.600000023841858], "rotation": [[0.17134110629558563, -0.10490475594997406, 0.9796107411384583], [-1.3817651733916136e-07, 0.9943149089813232, 0.10647942125797272], [-0.9852117896080017, -0.018244436010718346, 0.17036700248718262]], "target": [0.22446696758270268, 1.4722247183322907, -1.804440426826477], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_04.js"}, {"name": "WEB_Cam_05", "label": null, "position": [-1.2000000476837158, 1.600000023841858, -1.0], "rotation": [[-0.7622941136360168, 0.07398412376642227, -0.6429883241653442], [-1.9990133637293184e-07, 0.9934452772140503, 0.11430895328521729], [0.6472307443618774, 0.08713717758655548, -0.7572974562644958]], "target": [-0.4284140586853028, 1.4628292798995972, -0.091243052482605], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_05.js"}, {"name": "WEB_Cam_06", "label": null, "position": [1.2000000476837158, 1.399999976158142, -0.20000004768371582], "rotation": [[0.6757246255874634, -0.10092738270759583, 0.7302122116088867], [8.297330111872725e-08, 0.9905828237533569, 0.13691481947898865], [-0.7371541261672974, -0.09251665323972702, 0.6693612337112427]], "target": [0.3237453937530518, 1.2357021927833558, -1.0032335281372071], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_06.js"}, {"name": "WEB_Cam_07", "label": null, "position": [2.6000001430511475, 2.0999999046325684, -2.200000047683716], "rotation": [[-0.7878071665763855, -0.1293821632862091, 0.6021795272827148], [-6.890478232435271e-08, 0.9776879549026489, 0.21006250381469727], [-0.6159219741821289, 0.16548869013786316, -0.7702295780181885]], "target": [1.8773847103118897, 1.8479249000549316, -1.2757245540618896], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_07.js"}, {"name": "WEB_Cam_08", "label": null, "position": [-0.20000004768371582, 1.5499999523162842, 2.1000001430511475], "rotation": [[-0.5299990177154541, 0.11575990170240402, -0.8400599360466003], [-7.80759279450649e-08, 0.9906387329101562, 0.13650964200496674], [0.8479982614517212, 0.07235004007816315, -0.5250375270843506]], "target": [0.8080718755722045, 1.386188381910324, 2.7300451755523683], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_08.js"}, {"name": "WEB_Cam_09", "label": null, "position": [0.0, 1.5499999523162842, -0.0], "rotation": [[0.9615239500999451, -0.02194228582084179, 0.2738434672355652], [1.0003637029853962e-08, 0.9968051910400391, 0.07987108081579208], [-0.2747211456298828, -0.0767979547381401, 0.958452045917511]], "target": [-0.32861216068267823, 1.4541546553373337, -1.150142455101013], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_WEB_Cam_09.js"}, {"name": "sink", "label": "Sink", "position": [-2.0000000447034836, 1.6799999475479126, -3.080000050365925], "rotation": [[-0.7022136449813843, 0.43106159567832947, -0.566641092300415], [1.8231926190992453e-08, 0.7958818078041077, 0.6054520606994629], [0.7119664549827576, 0.42515674233436584, -0.5588789582252502]], "target": [-1.3200307339429855, 0.9534574747085571, -2.4093453004956245], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_sink.js"}, {"name": "appliances", "label": "Ovens", "position": [0.34999990463256836, 1.5499999523162842, -1.1500000953674316], "rotation": [[0.8228968977928162, 0.10924724489450455, -0.5575892329216003], [-2.7183265416397262e-08, 0.9813416600227356, 0.1922721117734909], [0.5681906938552856, -0.158220112323761, 0.8075429797172546]], "target": [1.0191069841384888, 1.3192734181880952, -2.1190516710281373], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_appliances.js"}, {"name": "dining", "label": "Dining", "position": [1.1499998569488525, 1.7000000476837158, 1.249999761581421], "rotation": [[-0.6459420919418335, -0.26610103249549866, 0.7155060172080994], [-9.451247251490713e-08, 0.9372790455818176, 0.3485797643661499], [-0.7633862495422363, 0.22516220808029175, -0.6054280996322632]], "target": [0.29139263629913337, 1.2817043304443358, 1.9765134811401368], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_dining.js"}, {"name": "lounge", "label": "Lounge", "position": [2.200000047683716, 1.5499999523162842, 2.3500001430511475], "rotation": [[-0.7525765895843506, 0.19702988862991333, -0.6283371448516846], [-5.5801741893901635e-08, 0.95418781042099, 0.2992081344127655], [0.6585046052932739, 0.22517701983451843, -0.7180994749069214]], "target": [2.9540046215057374, 1.1909501910209657, 3.211719512939453], "tan": [0.8571428571428571, 0.4821428571428571], "depthSize": [960, 540], "file": "photos/stop_lounge.js"}], "dwell": 3.5, "styles": [{"id": "V1", "short": "Style 1", "detail": "Navy & white marble", "swatch": "linear-gradient(135deg,#1f3550 50%,#e8e2d6 50%)", "name": "Style 1 \u2014 navy shaker cabinets, gold-veined white marble, grey marble floor", "transform": {"position": [-2.200000047683716, 0.0, -3.200000047683716], "quaternion": [-0.7071067811865476, 0.0, 0.0, 0.7071067811865476], "scale": 1.0}}, {"id": "V2", "short": "Style 2", "detail": "Walnut & herringbone", "swatch": "linear-gradient(135deg,#8a5434 50%,#d9c3a5 50%)", "name": "Style 2 \u2014 warm wood cabinets, Scritto marble, herringbone wood floor", "transform": {"position": [-2.200000047683716, 0.0, -3.200000047683716], "quaternion": [-0.7071067811865476, 0.0, 0.0, 0.7071067811865476], "scale": 1.0}}], "hd": {"V1": "splats/kitchen_v1_hd.js", "V2": "splats/kitchen_v2_hd.js"}, "cameraPath": [{"name": "WEB_Cam_09", "position": [0.0, 1.5499999523162842, -0.0], "target": [-0.8215304017066956, 1.310386709868908, -2.875356137752533], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_06", "position": [1.2000000476837158, 1.399999976158142, -0.20000004768371582], "target": [-0.9906365871429443, 0.9892555177211761, -2.208083748817444], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_02", "position": [2.3999998569488525, 1.600000023841858, 1.6000001430511475], "target": [0.5359904766082764, 1.2893317341804504, -0.7300114035606384], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_05", "position": [-1.2000000476837158, 1.600000023841858, -1.0], "target": [0.7289649248123169, 1.257073163986206, 1.2718923687934875], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_08", "position": [-0.20000004768371582, 1.5499999523162842, 2.1000001430511475], "target": [2.320179760456085, 1.140471026301384, 3.675112724304199], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_07", "position": [2.6000001430511475, 2.0999999046325684, -2.200000047683716], "target": [0.7934615612030029, 1.4698123931884766, 0.11068868637084961], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_03", "position": [-0.6000000238418579, 1.600000023841858, 1.3999998569488525], "target": [-1.164033442735672, 1.3179841414093971, -1.5329735279083252], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_04", "position": [1.3999998569488525, 1.600000023841858, -1.600000023841858], "target": [-1.5388323664665222, 1.2805617600679398, -2.1111010313034058], "fov_y": 42.55417341315535}, {"name": "WEB_Cam_01_Hero", "position": [-2.5834867656230927, 1.4002561569213867, -2.8895856142044067], "target": [0.1468580663204193, 0.9809963554143906, -1.7193560600280762], "fov_y": 42.55417341315535}], "fovY": 50.6, "secondsPerView": 7, "resumeTourAfter": 25, "roomCorners": [[-4.030000047683716, 0.0, 5.989999952316284], [-4.030000047683716, 2.7, 5.989999952316284], [5.209999952316284, 0.0, 5.989999952316284], [5.209999952316284, 2.7, 5.989999952316284], [5.209999952316284, 0.0, -4.490000047683716], [5.209999952316284, 2.7, -4.490000047683716], [-4.030000047683716, 0.0, -4.490000047683716], [-4.030000047683716, 2.7, -4.490000047683716]], "orbit": {"center": [0.6, 1.4, 0.75], "radius": 4.6, "minY": 0.5, "maxY": 2.4, "maxDistance": 6.0, "box": [-3.730000047683716, 4.9099999523162845, -4.190000047683716, 5.689999952316284]}, "ripple": {"speed": 7.5, "band": 0.45, "noise": 0.28, "glow": 0.75, "ease": 1.6}};</script>
+<script src="splats/kitchen_v1.js"></script>
+<script src="splats/kitchen_v2.js"></script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "@sparkjsdev/spark": "https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@2.4.0/dist/spark.module.js"
+} }
+</script>
+<script type="module">
+// Kitchen Style Viewer — three.js + Spark. Click a surface: the next finish spreads out from that spot.
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { SparkRenderer, SplatMesh, dyno } from "@sparkjsdev/spark";
+
+const CFG = window.KV_CONFIG;
+const DATA = window.KV_DATA || {};
+const $ = (id) => document.getElementById(id);
+const isTouch = matchMedia("(pointer: coarse)").matches;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function fail(msg) {
+  const e = $("err");
+  e.textContent = msg;
+  e.style.display = "block";
+  console.error(msg);
+}
+window.addEventListener("error", (e) => fail("Viewer error: " + (e.message || e)));
+
+// ---------- renderer / scene ----------
+const canvas = $("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight, false);
+// behind the splats: a room-matched tone, so thin spots (e.g. a ceiling no camera looked at) read as surface, not black
+renderer.setClearColor(new THREE.Color(CFG.clearColor || "#0d0c0b"), 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(CFG.fovY || 55, innerWidth / innerHeight, 0.02, 200);
+const spark = new SparkRenderer({ renderer });
+scene.add(spark);
+
+// keep at least ~68° horizontal view on tall phone screens so the room doesn't feel cropped
+function fitFov() {
+  const aspect = innerWidth / innerHeight;
+  const minHfov = THREE.MathUtils.degToRad(68);
+  const needY = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(minHfov / 2) / aspect));
+  camera.fov = Math.min(100, Math.max(CFG.fovY || 55, needY));
+  camera.aspect = aspect;
+  camera.updateProjectionMatrix();
+}
+fitFov();
+addEventListener("resize", () => {
+  renderer.setSize(innerWidth, innerHeight, false);
+  fitFov();
+});
+
+// ---------- ripple shader (runs per splat on the GPU) ----------
+const NOISE_GLSL = dyno.unindent(`
+  float kvHash(vec3 p){ p = fract(p*0.3183099 + vec3(0.71,0.113,0.419)); p *= 17.0;
+    return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+  float kvNoise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f*f*(3.0-2.0*f);
+    return mix(mix(mix(kvHash(i+vec3(0,0,0)),kvHash(i+vec3(1,0,0)),f.x),
+                   mix(kvHash(i+vec3(0,1,0)),kvHash(i+vec3(1,1,0)),f.x),f.y),
+               mix(mix(kvHash(i+vec3(0,0,1)),kvHash(i+vec3(1,0,1)),f.x),
+                   mix(kvHash(i+vec3(0,1,1)),kvHash(i+vec3(1,1,1)),f.x),f.y),f.z); }
+`);
+
+const R = CFG.ripple;           // { speed, band, noise, glow, ease }
+const shared = {
+  center: dyno.dynoVec3(new THREE.Vector3()),
+  radius: dyno.dynoFloat(0),
+  band: dyno.dynoFloat(R.band),
+  noise: dyno.dynoFloat(R.noise),
+  glow: dyno.dynoFloat(R.glow),
+  time: dyno.dynoFloat(0),
+};
+
+// mode: 0 = fully shown, 1 = shown inside the sphere (incoming), 2 = shown outside (outgoing), 3 = hidden
+function makeRippleModifier(modeUniform) {
+  return dyno.dynoBlock({ gsplat: dyno.Gsplat }, { gsplat: dyno.Gsplat }, ({ gsplat }) => {
+    const d = new dyno.Dyno({
+      inTypes: { gsplat: dyno.Gsplat, c: "vec3", r: "float", band: "float", nz: "float", glow: "float", t: "float", mode: "int" },
+      outTypes: { gsplat: dyno.Gsplat },
+      globals: () => [NOISE_GLSL],
+      statements: ({ inputs: i, outputs: o }) => dyno.unindentLines(`
+        ${o.gsplat} = ${i.gsplat};
+        if (${i.mode} != 0) {
+          vec3 p = ${i.gsplat}.center;
+          float n = (kvNoise(p*2.6 + vec3(0.0, ${i.t}*0.35, 0.0)) - 0.5) * ${i.nz}
+                  + (kvNoise(p*9.0) - 0.5) * ${i.nz} * 0.35;
+          float e = distance(p, ${i.c}) + n;
+          float inside = 1.0 - smoothstep(${i.r} - ${i.band}, ${i.r}, e);
+          float m = (${i.mode} == 1) ? inside : ((${i.mode} == 2) ? 1.0 - inside : 0.0);
+          float ring = (${i.mode} == 3) ? 0.0 : exp(-pow((e - (${i.r} - 0.5*${i.band})) / (0.55*${i.band}), 2.0));
+          ${o.gsplat}.rgba.a *= m;
+          ${o.gsplat}.rgba.rgb = mix(${o.gsplat}.rgba.rgb, vec3(1.0, 0.975, 0.94), clamp(ring * ${i.glow}, 0.0, 0.85));
+          ${o.gsplat}.scales *= mix(1.0, 0.55, ring * 0.6);
+        }
+      `),
+    });
+    gsplat = d.apply({
+      gsplat, c: shared.center, r: shared.radius, band: shared.band, nz: shared.noise,
+      glow: shared.glow, t: shared.time, mode: modeUniform,
+    }).gsplat;
+    return { gsplat };
+  });
+}
+
+// ---------- load styles ----------
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+  return out;
+}
+
+function makeMesh(s, bytes, mode) {
+  const mesh = new SplatMesh({ fileBytes: bytes });
+  const T = s.transform;         // aligns this Marble splat to the Blender-derived viewer space
+  mesh.position.fromArray(T.position);
+  mesh.quaternion.fromArray(T.quaternion);
+  mesh.scale.setScalar(T.scale);
+  mesh.worldModifier = makeRippleModifier(mode);
+  mesh.updateGenerator();
+  mesh.visible = false;
+  scene.add(mesh);
+  return mesh;
+}
+
+const styles = [];
+const bar = $("bar");
+let loaded = 0;
+for (const s of CFG.styles) {
+  const b64 = DATA[s.id];
+  if (!b64) { fail("Missing splat data for " + s.name); continue; }
+  const mode = dyno.dynoInt(3);
+  const mesh = makeMesh(s, b64ToBytes(b64), mode);
+  delete DATA[s.id];             // free the base64 string
+  const entry = { ...s, mesh, mode };
+  styles.push(entry);
+  mesh.initialized.then(() => { loaded++; bar.style.width = (100 * loaded / CFG.styles.length) + "%"; maybeStart(); });
+}
+
+// ---------- HD upgrade: the light versions smear when the camera moves, so everyone gets HD ----------
+// (phones too, unless the browser reports < 4 GB memory; ?lite forces the light version, ?hd forces HD)
+const params = new URLSearchParams(location.search);
+const wantHD = CFG.hd && !params.has("lite") &&
+  (params.has("hd") || (navigator.deviceMemory ?? 8) >= 4);
+const hdChip = $("hd");
+let tourHold = !!wantHD;      // the tour waits on the first (sharp photo) stop until the current finish is HD
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const el = document.createElement("script");
+    el.src = src; el.async = true;
+    el.onload = () => { el.remove(); res(); };
+    el.onerror = () => rej(new Error("Could not load " + src));
+    document.body.appendChild(el);
+  });
+}
+const nextFrame = () => new Promise((r) => setTimeout(r, 0));
+async function b64ToBytesSliced(b64, onProgress) {   // decode 1 MB at a time so the page never freezes
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  const out = new Uint8Array(b64.length / 4 * 3 - pad);
+  const CH = 1 << 20;                                   // multiple of 4 characters
+  let o = 0;
+  for (let i = 0; i < b64.length; i += CH) {
+    const bin = atob(b64.slice(i, i + CH));
+    for (let k = 0; k < bin.length; k++) out[o++] = bin.charCodeAt(k);
+    onProgress?.(i / b64.length);
+    await nextFrame();
+  }
+  return out;
+}
+async function waitForQuiet() { while (ripple) await new Promise((r) => setTimeout(r, 120)); }
+
+let hdDone = 0;
+async function upgradeHD(list) {
+  if (!wantHD) return;
+  hdChip.hidden = false;
+  for (const s of list) {
+    const done = hdDone;
+    const src = CFG.hd[s.id];
+    if (!src || s.hd) continue;
+    try {
+      hdChip.textContent = `HD ${Math.round(100 * done / styles.length)}%`;
+      let b64 = null;
+      if (location.protocol.startsWith("http")) {
+        // hosted (Netlify / Pages): download as text in the background — no 0.3 s script-parse hitch
+        try {
+          const txt = await (await fetch(src)).text();
+          b64 = txt.slice(txt.indexOf('="') + 2, txt.lastIndexOf('"'));
+        } catch (e) { b64 = null; }
+      }
+      if (!b64) {                                       // opened by double-click (file://): script tag works there
+        await loadScript(src);
+        b64 = window.KV_DATA_HD?.[s.id];
+      }
+      if (!b64) throw new Error("HD data missing for " + s.id);
+      const bytes = await b64ToBytesSliced(b64, (f) => {
+        hdChip.textContent = `HD ${Math.round(100 * (done + f * 0.9) / styles.length)}%`;
+      });
+      if (window.KV_DATA_HD) delete window.KV_DATA_HD[s.id];
+      const hi = makeMesh(s, bytes, s.mode);
+      await hi.initialized;
+      await waitForQuiet();
+      const lo = s.mesh;
+      s.mesh = hi;
+      hi.visible = lo.visible;
+      hi.updateVersion();
+      scene.remove(lo);
+      lo.dispose();
+      s.hd = true;
+    } catch (err) {
+      console.warn(err);                                  // keep the light version, never break the page
+    }
+    hdDone++;
+  }
+  if (hdDone >= styles.length) {
+    hdChip.textContent = "HD";
+    hdChip.title = "Full-detail splats loaded";
+  }
+}
+
+let current = 0;
+function setModes(active, incoming = -1) {
+  styles.forEach((s, k) => {
+    const m = k === incoming ? 1 : (k === active ? (incoming >= 0 ? 2 : 0) : 3);
+    s.mode.value = m;
+    s.mesh.visible = m !== 3;
+    s.mesh.updateVersion();
+  });
+}
+
+// ---------- UI ----------
+const stylesEl = $("styles");
+styles.forEach((s, k) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.innerHTML = `<span class="sw" style="background:${s.swatch}"></span><span>${s.short}</span><span class="lbl-long">&nbsp;· ${s.detail}</span>`;
+  b.setAttribute("aria-pressed", k === 0 ? "true" : "false");
+  b.title = s.name;
+  b.addEventListener("click", () => rippleTo(k, centerHit()));
+  stylesEl.appendChild(b);
+  s.button = b;
+});
+function syncButtons(k) { styles.forEach((s, i) => s.button.setAttribute("aria-pressed", i === k ? "true" : "false")); }
+
+// ---------- camera path + orbit ----------
+const path = CFG.cameraPath.map((c) => ({ p: new THREE.Vector3(...c.position), t: new THREE.Vector3(...c.target) }));
+const posCurve = new THREE.CatmullRomCurve3(path.map((c) => c.p), true, "centripetal", 0.5);
+const tgtCurve = new THREE.CatmullRomCurve3(path.map((c) => c.t), true, "centripetal", 0.5);
+const NP = path.length;
+const DWELL = CFG.dwell ?? 3.5;                // seconds the tour rests on each camera (the photo fades in)
+const segMove = path.map((c, k) => Math.max(3.2, c.p.distanceTo(path[(k + 1) % NP].p) * 1.5));
+const segStart = [];
+let TOUR_SECONDS = 0;
+for (let k = 0; k < NP; k++) { segStart.push(TOUR_SECONDS); TOUR_SECONDS += DWELL + segMove[k]; }
+const smooth = (x) => x * x * (3 - 2 * x);
+function tourParam(clockS) {                   // seconds -> curve parameter, resting exactly on each point
+  const c = ((clockS % TOUR_SECONDS) + TOUR_SECONDS) % TOUR_SECONDS;
+  let k = NP - 1;
+  while (k > 0 && segStart[k] > c) k--;
+  const local = c - segStart[k];
+  const f = local <= DWELL ? 0 : smooth(Math.min(1, (local - DWELL) / segMove[k]));
+  return ((k + f) / NP) % 1;
+}
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.rotateSpeed = isTouch ? 0.55 : 0.45;
+controls.zoomSpeed = 0.6;
+controls.panSpeed = 0.6;
+controls.minDistance = 0.4;
+controls.maxDistance = CFG.orbit.maxDistance;
+controls.maxPolarAngle = Math.PI * 0.92;
+controls.enabled = true;
+
+camera.position.copy(path[0].p);
+controls.target.copy(path[0].t);
+camera.lookAt(controls.target);
+
+let touring = !reduceMotion;
+let tourClock = 0;
+let idle = 0;
+const tourBtn = $("tour");
+function setTour(on) {
+  touring = on;
+  tourBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  if (on) {               // continue the tour from the nearest point on the path
+    let best = 0, bd = 1e9;
+    for (let k = 0; k < NP; k++) {
+      const d = path[k].p.distanceToSquared(camera.position);
+      if (d < bd) { bd = d; best = k; }
+    }
+    tourClock = segStart[best];
+    blendIn = 0;
+    fly = null;
+  }
+}
+tourBtn.addEventListener("click", () => setTour(!touring));
+controls.addEventListener("start", () => { if (touring) setTour(false); fly = null; idle = 0; });
+let blendIn = 1;
+const tmpP = new THREE.Vector3(), tmpT = new THREE.Vector3();
+
+// keep the camera inside the area the splat covers well
+const ORB = CFG.orbit;
+function clampCamera() {
+  const p = camera.position;
+  if (ORB.box) {                                // own splats cover the whole room: keep inside the walls
+    p.x = THREE.MathUtils.clamp(p.x, ORB.box[0], ORB.box[1]);
+    p.z = THREE.MathUtils.clamp(p.z, ORB.box[2], ORB.box[3]);
+    p.y = THREE.MathUtils.clamp(p.y, ORB.minY, ORB.maxY);
+    return;
+  }
+  const dx = p.x - ORB.center[0], dz = p.z - ORB.center[2];
+  const r = Math.hypot(dx, dz);
+  if (r > ORB.radius) { p.x = ORB.center[0] + dx / r * ORB.radius; p.z = ORB.center[2] + dz / r * ORB.radius; }
+  p.y = THREE.MathUtils.clamp(p.y, ORB.minY, ORB.maxY);
+}
+
+// ---------- picking + ripple ----------
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+function hitAt(clientX, clientY) {
+  ndc.set((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const ph = photoHit(raycaster.ray.direction);
+  if (ph) return ph;
+  const hits = raycaster.intersectObject(styles[current].mesh, false);
+  if (hits.length) return hits[0].point.clone();
+  return raycaster.ray.at(3, new THREE.Vector3());
+}
+function centerHit() { return hitAt(innerWidth / 2, innerHeight / 2); }
+
+let ripple = null;  // {from, to, t0, maxR}
+function rippleTo(k, point) {
+  if (k === current || ripple) return;
+  let maxR = 0;
+  for (const c of CFG.roomCorners) maxR = Math.max(maxR, point.distanceTo(new THREE.Vector3(...c)));
+  maxR += R.band + R.noise;
+  shared.center.value.copy(point);
+  shared.radius.value = 0;
+  const slow = parseFloat(new URLSearchParams(location.search).get("slow")) || 1;   // ?slow=5 for reviewing
+  ripple = { from: current, to: k, t0: performance.now(), dur: (reduceMotion ? 0.35 : maxR / R.speed) * slow, maxR };
+  setModes(current, k);
+  syncButtons(k);
+  hideHint();
+}
+
+let down = null;
+canvas.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener("pointerup", (e) => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  const quick = performance.now() - down.t < 380;
+  down = null;
+  if (moved < (isTouch ? 10 : 6) && quick) rippleTo((current + 1) % styles.length, hitAt(e.clientX, e.clientY));
+});
+canvas.addEventListener("keydown", (e) => {
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= styles.length) rippleTo(n - 1, centerHit());
+  if (e.key === " ") { e.preventDefault(); rippleTo((current + 1) % styles.length, centerHit()); }
+});
+
+let hintTimer = setTimeout(hideHint, 9000);
+function hideHint() { clearTimeout(hintTimer); $("hint").style.opacity = "0"; }
+
+// ---------- photo stops: the real Cycles render takes over when the camera stands on a stop ----------
+const STOPS = (CFG.stops || []).map((s) => {
+  const Rm = new THREE.Matrix3().set(...s.rotation.flat());          // photo camera -> world
+  return { ...s, pos: new THREE.Vector3(...s.position), tgt: new THREE.Vector3(...s.target),
+           worldToCam: Rm.clone().transpose(), tex: {}, ready: false };
+});
+const PHOTO_GLSL = `
+  uniform sampler2D uA, uB, uD;
+  uniform mat4 uInvVP; uniform vec3 uEye; uniform mat3 uW2C; uniform vec3 uPos; uniform vec2 uTan;
+  uniform float uFade, uRip, uR, uBand, uNz, uGlow, uT; uniform vec3 uC;
+  varying vec2 vUv;
+  ${NOISE_GLSL}
+  void main() {
+    vec4 w = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+    vec3 dir = normalize(w.xyz / w.w - uEye);
+    vec3 dc = uW2C * dir;
+    if (dc.z > -1e-4) discard;
+    vec2 uv = vec2(dc.x / -dc.z / uTan.x, dc.y / -dc.z / uTan.y) * 0.5 + 0.5;
+    float edge = smoothstep(0.0, 0.012, uv.x) * smoothstep(0.0, 0.012, 1.0 - uv.x)
+               * smoothstep(0.0, 0.012, uv.y) * smoothstep(0.0, 0.012, 1.0 - uv.y);
+    if (edge <= 0.0) discard;
+    vec3 col = texture2D(uA, uv).rgb;
+    if (uRip > 0.5) {
+      vec4 dt = texture2D(uD, uv);
+      float mm = floor(dt.g * 255.0 + 0.5) * 256.0 + floor(dt.r * 255.0 + 0.5);
+      vec3 p = uPos + dir * (mm > 0.0 ? mm / 1000.0 : 60.0);
+      float n = (kvNoise(p * 2.6 + vec3(0.0, uT * 0.35, 0.0)) - 0.5) * uNz + (kvNoise(p * 9.0) - 0.5) * uNz * 0.35;
+      float e = distance(p, uC) + n;
+      float inside = 1.0 - smoothstep(uR - uBand, uR, e);
+      col = mix(col, texture2D(uB, uv).rgb, inside);
+      float ring = exp(-pow((e - (uR - 0.5 * uBand)) / (0.55 * uBand), 2.0));
+      col = mix(col, vec3(1.0, 0.975, 0.94), clamp(ring * uGlow, 0.0, 0.85));
+    }
+    gl_FragColor = vec4(col, uFade * edge);   // raw sRGB pixels straight from the render, no re-grading
+  }`;
+const photoMat = new THREE.ShaderMaterial({
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+  fragmentShader: PHOTO_GLSL,
+  uniforms: {
+    uA: { value: null }, uB: { value: null }, uD: { value: null },
+    uInvVP: { value: new THREE.Matrix4() }, uEye: { value: new THREE.Vector3() },
+    uW2C: { value: new THREE.Matrix3() }, uPos: { value: new THREE.Vector3() }, uTan: { value: new THREE.Vector2() },
+    uFade: { value: 0 }, uRip: { value: 0 }, uR: { value: 0 }, uBand: { value: R.band }, uNz: { value: R.noise },
+    uGlow: { value: R.glow }, uT: { value: 0 }, uC: { value: new THREE.Vector3() },
+  },
+  transparent: true, depthTest: false, depthWrite: false,
+});
+const photoScene = new THREE.Scene();
+const photoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const photoQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), photoMat);
+photoQuad.frustumCulled = false;
+photoScene.add(photoQuad);
+let photoStop = null, photoFade = 0;
+window.__kv = () => ({ stops: STOPS.map((x) => [x.name, x.ready, +x.pos.distanceTo(camera.position).toFixed(3)]), fade: photoFade, stop: photoStop && photoStop.name, d: photoStop && photoStop.pos.distanceTo(camera.position), fov: camera.fov, touring, ripple: !!ripple });
+
+function nearestStop() {
+  let best = null, bd = 1e9;
+  for (const s of STOPS) {
+    if (!s.ready) continue;
+    const d = s.pos.distanceTo(camera.position);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best ? { s: best, d: bd } : null;
+}
+function photoHit(dirWorld) {
+  if (!photoStop || photoFade < 0.5) return null;
+  const s = photoStop;
+  const dc = dirWorld.clone().applyMatrix3(s.worldToCam);
+  if (dc.z > -1e-4) return null;
+  const u = (dc.x / -dc.z / s.tan[0]) * 0.5 + 0.5, v = (dc.y / -dc.z / s.tan[1]) * 0.5 + 0.5;
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return null;
+  const [W, H] = s.depthSize;
+  const mm = s.depth[Math.floor(v * H) * W + Math.floor(u * W)];
+  if (!mm) return null;
+  return s.pos.clone().addScaledVector(dirWorld, mm / 1000);
+}
+const invVP = new THREE.Matrix4();
+function drawPhoto(dt) {
+  const n = nearestStop();
+  const want = n ? 1 - THREE.MathUtils.smoothstep(n.d, 0.015, 0.07) : 0;
+  if (n && want > 0) photoStop = n.s;
+  photoFade += (want - photoFade) * Math.min(1, dt * (want > photoFade ? 3.2 : 9));
+  if (photoFade < 0.003 || !photoStop) return;
+  const s = photoStop, U = photoMat.uniforms;
+  camera.updateMatrixWorld();
+  invVP.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
+  U.uInvVP.value.copy(invVP);
+  U.uEye.value.copy(camera.position);
+  U.uW2C.value.copy(s.worldToCam);
+  U.uPos.value.copy(s.pos);
+  U.uTan.value.set(s.tan[0], s.tan[1]);
+  U.uFade.value = photoFade;
+  U.uT.value = shared.time.value;
+  if (ripple) {
+    U.uA.value = s.tex[styles[ripple.from].id];
+    U.uB.value = s.tex[styles[ripple.to].id];
+    U.uRip.value = 1;
+    U.uR.value = shared.radius.value;
+    U.uC.value.copy(shared.center.value);
+  } else {
+    U.uA.value = s.tex[styles[current].id];
+    U.uRip.value = 0;
+  }
+  U.uD.value = s.depthTex;
+  renderer.autoClear = false;
+  renderer.render(photoScene, photoCam);
+  renderer.autoClear = true;
+}
+
+async function gunzip(b64) {
+  const bytes = b64ToBytes(b64);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint16Array(await new Response(stream).arrayBuffer());
+}
+async function imageTexture(dataUri) {
+  const img = new Image();
+  await new Promise((res, rej) => {            // (img.decode() can stall in background tabs)
+    img.onload = res;
+    img.onerror = () => rej(new Error("photo failed to load"));
+    img.src = dataUri;
+  });
+  const t = new THREE.Texture(img);
+  t.colorSpace = THREE.NoColorSpace;          // show the render's pixels exactly as saved
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.needsUpdate = true;
+  return t;
+}
+async function loadStops(list) {
+  for (const s of list) {
+    if (s.ready || s.tried) continue;
+    s.tried = true;
+    try {
+      await loadScript(s.file);
+      const d = window.KV_STOPS?.[s.name];
+      if (!d) continue;
+      for (const st of styles) s.tex[st.id] = await imageTexture(d[st.id]);
+      s.depth = await gunzip(d.depth);
+      const [W, H] = s.depthSize;
+      s.depthTex = new THREE.DataTexture(new Uint8Array(s.depth.buffer), W, H, THREE.RGFormat, THREE.UnsignedByteType);
+      s.depthTex.minFilter = s.depthTex.magFilter = THREE.NearestFilter;
+      s.depthTex.needsUpdate = true;
+      delete window.KV_STOPS[s.name];
+      s.ready = true;
+    } catch (err) {
+      console.warn("photo stop", s.name, err);
+    }
+    await nextFrame();
+  }
+}
+
+// view buttons for the close-up stops
+let fly = null;
+function flyTo(s) {
+  setTour(false);
+  hideHint();
+  fly = { p0: camera.position.clone(), t0v: controls.target.clone(), p1: s.pos.clone(), t1: s.tgt.clone(),
+          t0: performance.now(), ms: reduceMotion ? 1 : 1700 };
+  idle = -20;                                   // linger a little longer on a chosen view
+}
+const viewsEl = $("views");
+const closeStops = STOPS.filter((s) => s.label);
+if (closeStops.length && viewsEl) {
+  viewsEl.hidden = false;
+  for (const s of closeStops) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = s.label;
+    b.title = "Go to the " + s.label + " view (real render)";
+    b.addEventListener("click", () => flyTo(s));
+    viewsEl.appendChild(b);
+  }
+}
+
+// ---------- start ----------
+let started = false;
+function maybeStart() {
+  if (started || loaded < styles.length) return;
+  started = true;
+  setModes(0);
+  const L = $("loader");
+  L.style.opacity = "0";
+  setTimeout(() => L.remove(), 900);
+  canvas.focus({ preventScroll: true });
+  loadInOrder();
+}
+// what the visitor sees first matters most: the sharp first photo, then the HD of the shown finish
+// (the tour waits on that photo meanwhile), then the other photos, then the other finish in HD
+async function loadInOrder() {
+  const first = STOPS.filter((s) => s.pos.distanceTo(path[0].p) < 0.05);
+  await loadStops(first);
+  if (wantHD) await new Promise((r) => setTimeout(r, 400));   // let the photo fade in before the heavy work
+  await upgradeHD([styles[current]]);
+  tourHold = false;
+  await loadStops(STOPS);
+  await upgradeHD(styles);
+}
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  shared.time.value += dt;
+
+  if (touring) {
+    if (!tourHold) tourClock += dt;
+    const e = tourParam(tourClock);
+    posCurve.getPoint(e, tmpP);
+    tgtCurve.getPoint(e, tmpT);
+    blendIn = Math.min(1, blendIn + dt * 0.8);
+    camera.position.lerp(tmpP, blendIn < 1 ? 0.04 : 1);
+    controls.target.lerp(tmpT, blendIn < 1 ? 0.04 : 1);
+  } else if (fly) {
+    const u = Math.min(1, (performance.now() - fly.t0) / fly.ms);
+    const k = smooth(u);
+    camera.position.lerpVectors(fly.p0, fly.p1, k);
+    controls.target.lerpVectors(fly.t0v, fly.t1, k);
+    if (u >= 1) fly = null;
+    idle = 0;
+  } else {
+    idle += dt;
+    if (idle > (CFG.resumeTourAfter || 25) && !reduceMotion) setTour(true);
+  }
+  controls.update();
+  if (!fly) clampCamera();
+
+  if (ripple) {
+    const u = Math.min(1, (performance.now() - ripple.t0) / 1000 / ripple.dur);
+    const eased = 1 - Math.pow(1 - u, R.ease);       // ease-out like the reference
+    shared.radius.value = eased * ripple.maxR;
+    styles[ripple.from].mesh.updateVersion();
+    styles[ripple.to].mesh.updateVersion();
+    if (u >= 1) { current = ripple.to; ripple = null; setModes(current); }
+  }
+  renderer.render(scene, camera);
+  drawPhoto(dt);
+});
+
+</script>
+</body>
+</html>
